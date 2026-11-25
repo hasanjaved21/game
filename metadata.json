@@ -1,0 +1,6 @@
+{
+  "name": "World Front — Army Battle Simulator & Spinner",
+  "description": "A PC tactical world map battle simulator where colored circle armies move freely, fight automatically on contact, and pair up via a two-spin battle wheel.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
