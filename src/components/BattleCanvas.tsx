@@ -53,6 +53,7 @@ export interface BattleCanvasHandle {
     team: Team,
     unitCount?: number
   ) => { homeX: number; homeY: number; dockX: number; dockY: number };
+  convertMembers: (fromTeamId: string, toTeamId: string, count?: number) => void;
 }
 
 export interface TopBoatAction {
@@ -531,26 +532,53 @@ export const BattleCanvas = forwardRef<BattleCanvasHandle, BattleCanvasProps>(
           const mask = waterMaskRef.current;
 
           const teamUnits = unitsRef.current.filter((u) => u.teamId === teamId);
+          const kingOnLand = teamUnits.find((u) => u.isKing);
+          const boatWithKing = boatsRef.current.find((b) =>
+            b.passengers.some((p) => p.teamId === teamId && p.isKing)
+          );
+
           let cx = team.homeX;
           let cy = team.homeY;
-          if (teamUnits.length > 0) {
+          if (kingOnLand) {
+            cx = kingOnLand.x;
+            cy = kingOnLand.y;
+          } else if (boatWithKing) {
+            const nearLand = findNearestLand(
+              mask,
+              boatWithKing.x,
+              boatWithKing.y,
+              120
+            );
+            if (nearLand) {
+              cx = nearLand.x;
+              cy = nearLand.y;
+            }
+          } else if (teamUnits.length > 0) {
             cx = teamUnits.reduce((s, u) => s + u.x, 0) / teamUnits.length;
             cy = teamUnits.reduce((s, u) => s + u.y, 0) / teamUnits.length;
           }
 
           for (let i = 0; i < count; i++) {
             const ang = (Math.PI * 2 * i) / count + Math.random() * 0.4;
-            const dist = 12 + Math.random() * 16;
+            const dist = 10 + Math.random() * 14;
             const rawX = cx + Math.cos(ang) * dist;
             const rawY = cy + Math.sin(ang) * dist;
             const land = findNearestLand(mask, rawX, rawY, 80) ?? { x: cx, y: cy };
             unitsRef.current.push(createArmyUnit(teamId, land.x, land.y));
           }
 
+          orderPulsesRef.current.push({
+            x: cx,
+            y: cy,
+            alpha: 0.9,
+            radius: 8,
+            color: team.color,
+          });
+
           soundEngine.playOrder();
           callbacksRef.current.onBattleLog({
             id: `pop-${Date.now()}-${teamId}`,
-            text: `${team.name} gained +${count} population`,
+            text: `${team.name} gained +${count} near King`,
             color: team.color,
             timestamp: Date.now(),
           });
@@ -793,6 +821,117 @@ export const BattleCanvas = forwardRef<BattleCanvasHandle, BattleCanvasProps>(
             dockX,
             dockY,
           };
+        },
+        convertMembers: (fromTeamId: string, toTeamId: string, count = 5) => {
+          if (fromTeamId === toTeamId) return;
+          const fromTeam = teamsRef.current.find((t) => t.id === fromTeamId);
+          const toTeam = teamsRef.current.find((t) => t.id === toTeamId);
+          if (!fromTeam || !toTeam) return;
+
+          const toUnits = unitsRef.current.filter((u) => u.teamId === toTeamId);
+          const toKing = toUnits.find((u) => u.isKing);
+          const toBoatWithKing = boatsRef.current.find((b) =>
+            b.passengers.some((p) => p.teamId === toTeamId && p.isKing)
+          );
+
+          let refX = toTeam.homeX;
+          let refY = toTeam.homeY;
+          if (toKing) {
+            refX = toKing.x;
+            refY = toKing.y;
+          } else if (toBoatWithKing) {
+            refX = toBoatWithKing.x;
+            refY = toBoatWithKing.y;
+          } else if (toUnits.length > 0) {
+            refX = toUnits.reduce((s, u) => s + u.x, 0) / toUnits.length;
+            refY = toUnits.reduce((s, u) => s + u.y, 0) / toUnits.length;
+          }
+
+          // Nearest members of 2nd-spin team (non-Kings prioritized, then King last if < count)
+          const candidates = unitsRef.current
+            .filter((u) => u.teamId === fromTeamId)
+            .sort((a, b) => {
+              if (Boolean(a.isKing) !== Boolean(b.isKing)) {
+                return a.isKing ? 1 : -1;
+              }
+              return (
+                Math.hypot(a.x - refX, a.y - refY) -
+                Math.hypot(b.x - refX, b.y - refY)
+              );
+            });
+
+          const chosen = candidates.slice(0, count);
+
+          // If fewer than count on land, also pull & convert passengers from 2nd-spin team's boats
+          if (chosen.length < count) {
+            const mask = waterMaskRef.current;
+            for (const b of boatsRef.current) {
+              if (chosen.length >= count) break;
+              const remainingBoatPassengers: ArmyUnit[] = [];
+              for (const p of b.passengers) {
+                if (p.teamId === fromTeamId && chosen.length < count) {
+                  const land =
+                    findNearestLand(mask, b.x, b.y, 120) ?? {
+                      x: fromTeam.homeX,
+                      y: fromTeam.homeY,
+                    };
+                  p.x = land.x;
+                  p.y = land.y;
+                  unitsRef.current.push(p);
+                  chosen.push(p);
+                } else {
+                  remainingBoatPassengers.push(p);
+                }
+              }
+              b.passengers = remainingBoatPassengers;
+            }
+          }
+
+          for (const member of chosen) {
+            member.teamId = toTeamId;
+            member.isKing = false;
+            member.maxHp = 100;
+            member.hp = 100;
+            member.attack = 15;
+            member.selected = false;
+            member.targetX = null;
+            member.targetY = null;
+            member.targetBoatId = null;
+            member.attackTargetId = null;
+            member.hitFlash = 1;
+
+            orderPulsesRef.current.push({
+              x: member.x,
+              y: member.y,
+              alpha: 0.95,
+              radius: 5,
+              color: toTeam.color,
+            });
+          }
+
+          if (chosen.length > 0) {
+            const avgX = chosen.reduce((s, u) => s + u.x, 0) / chosen.length;
+            const avgY = chosen.reduce((s, u) => s + u.y, 0) / chosen.length;
+            floatingTextsRef.current.push({
+              id: `ft-conv-${Date.now()}`,
+              x: avgX,
+              y: avgY - 12,
+              text: `+${chosen.length} Converted`,
+              color: toTeam.color,
+              alpha: 1,
+              vy: -18,
+            });
+
+            soundEngine.playOrder();
+            callbacksRef.current.onBattleLog({
+              id: `conv-${Date.now()}-${toTeamId}`,
+              text: `${toTeam.name} converted ${chosen.length} from ${fromTeam.name}`,
+              color: toTeam.color,
+              timestamp: Date.now(),
+            });
+          }
+
+          syncStatsNow();
         },
       }),
       [disembarkBoat, fitToScreen, syncStatsNow]
@@ -1387,61 +1526,46 @@ export const BattleCanvas = forwardRef<BattleCanvasHandle, BattleCanvasProps>(
             }
           }
 
-          // Enemy does NOT attack until literally touching each other
-          let targetUnit: ArmyUnit | null = null;
-          let minDist = Infinity;
-
-          for (const other of unitsRemaining) {
-            if (areAllied(u.teamId, other.teamId)) continue;
-            const d = Math.hypot(other.x - u.x, other.y - u.y);
-            const touchDist = u.radius + other.radius + 3.5;
-            if (d <= touchDist && d < minDist) {
-              minDist = d;
-              targetUnit = other;
-            }
-          }
-
+          // Balls cannot attack each other; only attack enemy boats when touching them
           let targetBoat: Boat | null = null;
-          if (!targetUnit) {
-            for (const b of boats) {
-              if (areAllied(u.teamId, b.teamId)) continue;
-              const d = Math.hypot(b.x - u.x, b.y - u.y);
-              const touchBoatDist = u.radius + b.radius + 3.5;
-              if (d <= touchBoatDist && d < minDist) {
-                minDist = d;
-                targetBoat = b;
-              }
+          let minDist = Infinity;
+          for (const b of boats) {
+            if (areAllied(u.teamId, b.teamId)) continue;
+            const d = Math.hypot(b.x - u.x, b.y - u.y);
+            const touchBoatDist = u.radius + b.radius + 3.5;
+            if (d <= touchBoatDist && d < minDist) {
+              minDist = d;
+              targetBoat = b;
             }
           }
 
-          if ((targetUnit || targetBoat) && u.cooldown <= 0) {
+          if (targetBoat && u.cooldown <= 0) {
             u.cooldown = 0.56 + Math.random() * 0.14;
             const teamColor = teamMap.get(u.teamId)?.color ?? '#0F172A';
             projectilesRef.current.push({
               id: `proj-${now}-${Math.random()}`,
               fromX: u.x,
               fromY: u.y,
-              toX: targetUnit ? targetUnit.x : targetBoat!.x,
-              toY: targetUnit ? targetUnit.y : targetBoat!.y,
+              toX: targetBoat.x,
+              toY: targetBoat.y,
               x: u.x,
               y: u.y,
               progress: 0,
               color: teamColor,
               damage: u.attack,
-              targetUnitId: targetUnit ? targetUnit.id : null,
-              targetBoatId: targetBoat ? targetBoat.id : null,
+              targetUnitId: null,
+              targetBoatId: targetBoat.id,
               attackerTeamId: u.teamId,
             });
             soundEngine.playShot();
           }
         }
 
-        // Boats only attack when touching enemy boats or enemy persons ("if boat come closer to the person")
+        // Boats only attack enemy boats when touching (balls cannot be attacked by balls/boats)
         for (const b of boats) {
           if (b.cooldown > 0) continue;
 
           let targetBoat: Boat | null = null;
-          let targetUnit: ArmyUnit | null = null;
           let minDist = Infinity;
 
           for (const otherBoat of boats) {
@@ -1454,34 +1578,22 @@ export const BattleCanvas = forwardRef<BattleCanvasHandle, BattleCanvasProps>(
             }
           }
 
-          if (!targetBoat) {
-            for (const u of unitsRemaining) {
-              if (areAllied(b.teamId, u.teamId)) continue;
-              const d = Math.hypot(u.x - b.x, u.y - b.y);
-              const touchDist = b.radius + u.radius + 3.5;
-              if (d <= touchDist && d < minDist) {
-                minDist = d;
-                targetUnit = u;
-              }
-            }
-          }
-
-          if (targetBoat || targetUnit) {
+          if (targetBoat) {
             b.cooldown = 0.72;
             const teamColor = teamMap.get(b.teamId)?.color ?? '#0F172A';
             projectilesRef.current.push({
               id: `bproj-${now}-${Math.random()}`,
               fromX: b.x,
               fromY: b.y,
-              toX: targetBoat ? targetBoat.x : targetUnit!.x,
-              toY: targetBoat ? targetBoat.y : targetUnit!.y,
+              toX: targetBoat.x,
+              toY: targetBoat.y,
               x: b.x,
               y: b.y,
               progress: 0,
               color: teamColor,
               damage: b.attack,
-              targetUnitId: targetUnit ? targetUnit.id : null,
-              targetBoatId: targetBoat ? targetBoat.id : null,
+              targetUnitId: null,
+              targetBoatId: targetBoat.id,
               attackerTeamId: b.teamId,
             });
             soundEngine.playShot();
@@ -1820,21 +1932,6 @@ export const BattleCanvas = forwardRef<BattleCanvasHandle, BattleCanvasProps>(
               ctx.strokeStyle = 'rgba(15, 23, 42, 0.35)';
               ctx.lineWidth = 0.7;
               ctx.stroke();
-
-              if (u.hp < u.maxHp) {
-                const ratio = Math.max(0, u.hp / u.maxHp);
-                ctx.beginPath();
-                ctx.arc(
-                  u.x,
-                  u.y,
-                  u.radius + 2.2,
-                  -Math.PI / 2,
-                  -Math.PI / 2 + Math.PI * 2 * ratio
-                );
-                ctx.strokeStyle = ratio > 0.4 ? '#0F172A' : '#DC2626';
-                ctx.lineWidth = 1.5;
-                ctx.stroke();
-              }
 
               // Crown on King circle (same circle size, crown sitting on top)
               if (u.isKing) {

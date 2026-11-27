@@ -1,5 +1,11 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { ArrowDownToLine, ArrowUpFromLine, Plus, Volume2, VolumeX } from 'lucide-react';
+import {
+  ArrowDownToLine,
+  ArrowUpFromLine,
+  Plus,
+  Volume2,
+  VolumeX,
+} from 'lucide-react';
 import {
   BattleCanvas,
   BattleCanvasHandle,
@@ -288,6 +294,17 @@ export default function App() {
   const handleSecondSpinLanded = (entry: WheelEntry) => {
     setSecondEntry(entry);
     if (attachedEntry) {
+      if (
+        attachedEntry.teamId &&
+        entry.teamId &&
+        attachedEntry.teamId !== entry.teamId
+      ) {
+        canvasHandleRef.current?.convertMembers(
+          entry.teamId,
+          attachedEntry.teamId,
+          5
+        );
+      }
       setSpinHistory((prev) =>
         [
           {
@@ -305,12 +322,6 @@ export default function App() {
   const handleClearPair = () => {
     setAttachedEntry(null);
     setSecondEntry(null);
-  };
-
-  const handleClashPair = (first: WheelEntry, second: WheelEntry) => {
-    if (first.teamId && second.teamId && first.teamId !== second.teamId) {
-      canvasHandleRef.current?.clashTeams(first.teamId, second.teamId);
-    }
   };
 
   const handleRenameTeam = (teamId: string, newName: string) => {
@@ -380,65 +391,68 @@ export default function App() {
         />
 
         {/* Top-of-map Load / Unload bar styled with selected boat or person color */}
-        {topBoatAction && (topBoatAction.canLoad || topBoatAction.canUnload) && (
-          <div className="pointer-events-none absolute top-3 left-1/2 z-20 -translate-x-1/2">
-            <div
-              className="pointer-events-auto flex items-center gap-2 rounded-lg border-2 bg-white/95 px-2.5 py-1.5 shadow-md backdrop-blur-xs"
-              style={{ borderColor: topBoatAction.teamColor }}
-            >
-              <span
-                className="h-2.5 w-2.5 shrink-0 rounded-full"
-                style={{ backgroundColor: topBoatAction.teamColor }}
-              />
-              <span className="text-xs font-semibold text-slate-900 whitespace-nowrap">
-                {topBoatAction.teamName}
-              </span>
+        {topBoatAction &&
+          (topBoatAction.canLoad || topBoatAction.canUnload) && (
+            <div className="pointer-events-none absolute top-3 left-1/2 z-20 -translate-x-1/2">
+              <div
+                className="pointer-events-auto flex items-center gap-2 rounded-lg border-2 bg-white/95 px-2.5 py-1.5 shadow-md backdrop-blur-xs"
+                style={{ borderColor: topBoatAction.teamColor }}
+              >
+                <span
+                  className="h-2.5 w-2.5 shrink-0 rounded-full"
+                  style={{ backgroundColor: topBoatAction.teamColor }}
+                />
+                <span className="text-xs font-semibold text-slate-900 whitespace-nowrap">
+                  {topBoatAction.teamName}
+                </span>
 
-              {topBoatAction.canLoad && (
-                <button
-                  type="button"
-                  onClick={() =>
-                    canvasHandleRef.current?.loadClosestToBoat(topBoatAction.boatId)
-                  }
-                  className="inline-flex items-center gap-1 rounded-md px-2.5 py-1 text-xs font-semibold shadow-xs transition-opacity hover:opacity-90 whitespace-nowrap"
-                  style={{
-                    backgroundColor: topBoatAction.teamColor,
-                    color: getContrastTextColor(topBoatAction.teamColor),
-                  }}
-                >
-                  <ArrowDownToLine className="h-3.5 w-3.5" />
-                  Load
-                </button>
-              )}
+                {topBoatAction.canLoad && (
+                  <button
+                    type="button"
+                    onClick={() =>
+                      canvasHandleRef.current?.loadClosestToBoat(
+                        topBoatAction.boatId
+                      )
+                    }
+                    className="inline-flex items-center gap-1 rounded-md px-2.5 py-1 text-xs font-semibold shadow-xs transition-opacity hover:opacity-90 whitespace-nowrap"
+                    style={{
+                      backgroundColor: topBoatAction.teamColor,
+                      color: getContrastTextColor(topBoatAction.teamColor),
+                    }}
+                  >
+                    <ArrowDownToLine className="h-3.5 w-3.5" />
+                    Load
+                  </button>
+                )}
 
-              {topBoatAction.canUnload && (
-                <button
-                  type="button"
-                  onClick={() =>
-                    canvasHandleRef.current?.unloadBoat(topBoatAction.boatId)
-                  }
-                  className="inline-flex items-center gap-1 rounded-md border px-2.5 py-1 text-xs font-semibold shadow-xs transition-opacity hover:opacity-90 whitespace-nowrap tabular-nums"
-                  style={
-                    topBoatAction.canLoad
-                      ? {
-                          borderColor: topBoatAction.teamColor,
-                          color: '#0F172A',
-                          backgroundColor: '#FFFFFF',
-                        }
-                      : {
-                          borderColor: topBoatAction.teamColor,
-                          backgroundColor: topBoatAction.teamColor,
-                          color: getContrastTextColor(topBoatAction.teamColor),
-                        }
-                  }
-                >
-                  <ArrowUpFromLine className="h-3.5 w-3.5" />
-                  Unload ({topBoatAction.passengers})
-                </button>
-              )}
+                {topBoatAction.canUnload && (
+                  <button
+                    type="button"
+                    onClick={() =>
+                      canvasHandleRef.current?.unloadBoat(topBoatAction.boatId)
+                    }
+                    className="inline-flex items-center gap-1 rounded-md border px-2.5 py-1 text-xs font-semibold shadow-xs transition-opacity hover:opacity-90 whitespace-nowrap tabular-nums"
+                    style={
+                      topBoatAction.canLoad
+                        ? {
+                            borderColor: topBoatAction.teamColor,
+                            color: '#0F172A',
+                            backgroundColor: '#FFFFFF',
+                          }
+                        : {
+                            borderColor: topBoatAction.teamColor,
+                            backgroundColor: topBoatAction.teamColor,
+                            color: getContrastTextColor(topBoatAction.teamColor),
+                          }
+                    }
+                  >
+                    <ArrowUpFromLine className="h-3.5 w-3.5" />
+                    Unload ({topBoatAction.passengers})
+                  </button>
+                )}
+              </div>
             </div>
-          </div>
-        )}
+          )}
 
         {/* Minimal contextual selection readout + audio toggle */}
         <div className="pointer-events-none absolute bottom-3 left-3 right-3 flex items-center justify-between gap-2">
@@ -501,7 +515,6 @@ export default function App() {
           onFirstSpinLanded={handleFirstSpinLanded}
           onSecondSpinLanded={handleSecondSpinLanded}
           onClearPair={handleClearPair}
-          onClashPair={handleClashPair}
         />
 
         <TeamRoster

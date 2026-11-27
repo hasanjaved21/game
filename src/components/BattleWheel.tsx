@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
-import { Link2, Lock, RefreshCw, Swords, Trash2, Unlock, Users } from 'lucide-react';
+import { Link2, Lock, RefreshCw, Trash2, Unlock, Users } from 'lucide-react';
 import { TEAM_COLOR_PALETTE } from '../data/presets';
 import { SpinPairResult, Team, WheelEntry } from '../types/game';
 import { soundEngine } from '../utils/audio';
@@ -17,7 +17,6 @@ interface BattleWheelProps {
   onFirstSpinLanded: (entry: WheelEntry) => void;
   onSecondSpinLanded: (entry: WheelEntry) => void;
   onClearPair: () => void;
-  onClashPair: (first: WheelEntry, second: WheelEntry) => void;
 }
 
 function getContrastText(hex: string): string {
@@ -40,7 +39,6 @@ export const BattleWheel: React.FC<BattleWheelProps> = ({
   onFirstSpinLanded,
   onSecondSpinLanded,
   onClearPair,
-  onClashPair,
 }) => {
   const [spinnerMode, setSpinnerMode] = useState<SpinnerMode>('POP_5');
   const [syncWithTeams, setSyncWithTeams] = useState(true);
@@ -54,7 +52,7 @@ export const BattleWheel: React.FC<BattleWheelProps> = ({
   const [newName, setNewName] = useState('');
   const [newColor, setNewColor] = useState(TEAM_COLOR_PALETTE[0].color);
   const [keepAttachedLocked, setKeepAttachedLocked] = useState(false);
-  const [excludeAttachedOnSecond, setExcludeAttachedOnSecond] = useState(false);
+  const [excludeAttachedOnSecond, setExcludeAttachedOnSecond] = useState(true);
   const [isSpinning, setIsSpinning] = useState(false);
   const [showEditor, setShowEditor] = useState(false);
 
@@ -348,11 +346,6 @@ export const BattleWheel: React.FC<BattleWheelProps> = ({
     ((Boolean(attachedEntry) && !secondEntry) ||
       (Boolean(attachedEntry) && Boolean(secondEntry) && keepAttachedLocked));
 
-  const canClashOnMap =
-    Boolean(attachedEntry?.teamId) &&
-    Boolean(secondEntry?.teamId) &&
-    attachedEntry?.teamId !== secondEntry?.teamId;
-
   return (
     <section className="flex flex-col border-b border-slate-200 bg-white">
       <div className="flex items-center justify-between gap-2 px-4 pt-3 pb-1.5">
@@ -487,9 +480,9 @@ export const BattleWheel: React.FC<BattleWheelProps> = ({
           <div className="mt-2.5 w-full rounded-lg border border-slate-200 bg-slate-50 p-2.5">
             {!attachedEntry && !secondEntry && (
               <div className="flex items-center justify-between text-[11px] text-slate-500">
-                <span>1st Spin: Attaches name</span>
+                <span>1st Spin: Attaches 1st team</span>
                 <span aria-hidden="true">·</span>
-                <span>2nd Spin: Appears with 1st</span>
+                <span>2nd Spin: 5 nearest convert to 1st</span>
               </div>
             )}
 
@@ -516,7 +509,7 @@ export const BattleWheel: React.FC<BattleWheelProps> = ({
             )}
 
             {attachedEntry && secondEntry && (
-              <div className="space-y-2">
+              <div className="space-y-1.5">
                 <div className="flex items-center justify-between gap-2 rounded-md border border-slate-200 bg-white px-2.5 py-1.5">
                   <div className="flex items-center gap-1.5 min-w-0">
                     <span
@@ -540,17 +533,13 @@ export const BattleWheel: React.FC<BattleWheelProps> = ({
                     </span>
                   </div>
                 </div>
-
-                {canClashOnMap && (
-                  <button
-                    type="button"
-                    onClick={() => onClashPair(attachedEntry, secondEntry)}
-                    className="flex w-full items-center justify-center gap-1.5 rounded-md bg-red-600 px-2.5 py-1.5 text-[11px] font-semibold text-white hover:bg-red-700 whitespace-nowrap"
-                  >
-                    <Swords className="h-3.5 w-3.5" />
-                    <span>March to Clash</span>
-                  </button>
-                )}
+                {attachedEntry.teamId &&
+                  secondEntry.teamId &&
+                  attachedEntry.teamId !== secondEntry.teamId && (
+                    <div className="text-center text-[11px] font-semibold text-slate-600">
+                      5 nearest of {secondEntry.name} converted to {attachedEntry.name}
+                    </div>
+                  )}
               </div>
             )}
           </div>
